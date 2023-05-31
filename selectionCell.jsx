@@ -32,7 +32,9 @@ export default class SelectionCell extends React.Component {
 export class SelectionAllCell extends React.Component {
 
     shouldComponentUpdate(nextProps) {
-        if (nextProps.column.selectedAllRow !== this.props.column.selectedAllRow) {
+        const {allRowSelected, indeterminate} = this.props.column;
+        if ((nextProps.column.allRowSelected !== allRowSelected) || 
+        (nextProps.column.indeterminate !== indeterminate)) {
             return true;
         }
         return false;
@@ -48,7 +50,7 @@ export class SelectionAllCell extends React.Component {
     render() {
         const { column } = this.props
         return (
-            <Checkbox checked={column.selectedAllRow} onChange={this.handleChange} />
+            <Checkbox checked={column.allRowSelected} onChange={this.handleChange} indeterminate={column.indeterminate}/>
         )
     }
 }

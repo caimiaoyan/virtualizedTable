@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
+import cn from 'classnames';
 import BaseTable, { ExpandIcon } from 'react-base-table';
 import { Spin, Icon } from 'antd';
 import SelectionCell, { SelectionAllCell } from './selectionCell';
@@ -11,7 +12,7 @@ import RadioFilter from './filters/radio';
 import ConditionFilter from './filters/condition';
 import throttle from 'lodash/throttle';
 import ResizeObserver from 'resize-observer-polyfill';
-import { renderElement, immutableCompare, calcContainerHeight, getScrollbarSize, isObjectEqual, deepCopy, prefixClass, getObjectValue } from './utils';
+import { renderElement, immutableCompare, calcContainerHeight, getScrollbarSize, isObjectEqual, deepCopy, prefixClass, getObjectValue, uniqueArrayObject } from './utils';
 import './index.less';
 
 const RESIZE_THROTTLE_WAIT = 50;
@@ -24,13 +25,9 @@ const DEFAULT_SELECTION = {
     headerClassName: prefixClass('header-cell--align-center')
 }
 
-const Table = React.forwardRef((props, ref) => {
-    return <BaseTable ref={ref} {...props} />
-})
 export default class Index extends Component {
     constructor(props) {
         super();
-        this.tableRef = React.createRef();
         this.allRowKeys = [];
         this.expandColumnKey = this.handleExpandColumnKey(props);
         this.origMaxHeight = props.maxHeight;
@@ -44,8 +41,10 @@ export default class Index extends Component {
             data: props.data,
             expandedRowKeys: props.expandedRowKeys,
             headerExpandedStatus: props.expandAllRow,
-            selectedRowKeys: (props.rowSelection && props.rowSelection.selectedRowKeys ? props.rowSelection.selectedRowKeys : []),
-            selectedAllRow: false,
+            selectedRowKeys: [],
+            selectedRows: [],
+            allRowSelected: false,
+            allSelectedIndeterminate: false,
             dropdownVisibles: {},
             filteredStates: [],
             allFilters: {},
@@ -54,17 +53,28 @@ export default class Index extends Component {
 
     componentDidMount() {
 
+        const { rowSelection, data, rowKey } = this.props;
+
         //把maxHeight的计算属性转换成实际数字
         this.setState({ maxHeight: calcContainerHeight(this.props.maxHeight) })
 
         //计算滚动条宽度
         this.scrollbarSize = getScrollbarSize();
-        
+
         //处理表头
-        this.handleColumns(this.props);  
+        this.handleColumns(this.props);
 
         //处理表格数据
         this.handleData(this.props);
+
+        if (rowSelection && Array.isArray(rowSelection.selectedRowKeys)) {
+            this.setState({
+                selectedRowKeys: rowSelection.selectedRowKeys,
+                selectedRows: data.filter(item => rowSelection.selectedRowKeys.includes(item[rowKey]))
+            }, () => {
+                this.handleAllRowSelected();
+            })
+        }
 
         this.resizeWidthObserver = new ResizeObserver(throttle((entries) => {
             const { width } = this.state;
@@ -89,7 +99,7 @@ export default class Index extends Component {
     }
 
     componentWillReceiveProps(nextProps) {
-        const { maxHeight, columns, data, rowSelection } = nextProps;
+        const { maxHeight, columns, data, rowSelection, rowKey } = nextProps;
         const { selectedRowKeys } = rowSelection || {};
 
         //处理表格宽度
@@ -110,7 +120,14 @@ export default class Index extends Component {
         }
 
         if (Array.isArray(selectedRowKeys) && !immutableCompare(selectedRowKeys, this.state.selectedRowKeys)) {
-            this.setState({ selectedRowKeys })
+            this.setState({ selectedRowKeys }, () => {
+                this.handleAllRowSelected();
+            })
+        }
+
+        if (Array.isArray(selectedRowKeys) && 
+            (!immutableCompare(selectedRowKeys, this.state.selectedRowKeys) || !immutableCompare(data, this.props.data))) {
+            this.setState({ selectedRows: data.filter(item => selectedRowKeys.includes(item[rowKey])) });
         }
     }
 
@@ -132,7 +149,7 @@ export default class Index extends Component {
     createTableWrapperRef = (el) => {
         if (el) {
             this.tableWrapperRef = el;
-            if(!this.props.width){
+            if (!this.props.width) {
                 this.setState({ width: el.getBoundingClientRect().width })
             }
         }
@@ -152,11 +169,6 @@ export default class Index extends Component {
         console.info(`一共有${this.allRowKeys.length}行`)
         if (headerExpandedStatus) {
             _expandedRowKeys = [...expandedRowKeys, ...this.allRowKeys];
-        }
-
-        //判断表头选择框状态
-        if(this.props.rowSelection){
-            this.selectedAllRow();
         }
 
         this.setState({
@@ -328,12 +340,12 @@ export default class Index extends Component {
 
     //返回处理过列宽的columns
     calcColumnsWidth = ({
-        columns : _columns = this.resizeColumns,
+        columns: _columns = this.resizeColumns,
         resizingKey
     } = {}) => {
 
         if (!Array.isArray(_columns) || !_columns.length) return { _columns };
-        
+
         let width = this.tableWrapperRef && this.tableWrapperRef.getBoundingClientRect().width || this.props.width || 0;
         let columns = deepCopy(_columns);
 
@@ -352,7 +364,7 @@ export default class Index extends Component {
         columns.forEach(item => {
             if (item.width && !item.hidden) {
                 sumfixedColumnsWidth += item.width;
-                if(item.key !== resizingKey){
+                if (item.key !== resizingKey) {
                     vsibileColumns.push(item);
                 }
             }
@@ -365,12 +377,12 @@ export default class Index extends Component {
             const random = resizingKey ? Math.floor(Math.random() * vsibileColumns.length) : vsibileColumns.length - 1
 
             columns.map((item) => {
-                if(!item.hidden && item.width){
-                    if(item.key != vsibileColumns[random].key && item.key !== resizingKey){
+                if (!item.hidden && item.width) {
+                    if (item.key != vsibileColumns[random].key && item.key !== resizingKey) {
                         item.width = Math.floor(item.width + excessWidth);
                         sumWidth += item.width;
                     }
-                    if(item.key === resizingKey){
+                    if (item.key === resizingKey) {
                         sumWidth += item.width;
                     }
                 }
@@ -414,73 +426,121 @@ export default class Index extends Component {
 
     //调整列宽
     onColumnResize = ({ column, width }) => {
-        const tempColumns = [...this.state.columns].map(item => {
+        const fixedSumWidth = this.state.columns.reduce((accumulator, item, _index) => {
+            if (item.frozen && item.width && item.key !== column.key) {
+                return accumulator + item.width;
+            } else {
+                return accumulator;
+            }
+        }, 0)
+        const maxFixedWidth = this.state.width - fixedSumWidth - 20;
+        const _columns = [...this.state.columns].map(item => {
             if (item.key === column.key) item = column;
+            if (column.frozen && column.width >= maxFixedWidth) {
+                column.width = maxFixedWidth
+            }
             return item;
         })
         if (Object.keys(this.state.dropdownVisibles).length) this.hiddenFilterDropdown();
-        this.resizeColumns = tempColumns;
+        this.resizeColumns = _columns;
         this.setState({
-            columns: this.calcColumnsWidth({columns : tempColumns, resizingKey: column.key})
+            columns: this.calcColumnsWidth({ columns: _columns, resizingKey: column.key })
         })
     }
 
     //选择行变化
     onHandleSelectChange = ({ selected, rowData }) => {
+        const { rowKey } = this.props;
         const selectedRowKeys = [...this.state.selectedRowKeys];
-        const key = rowData[this.props.rowKey];
-        const { onChange = function () { } } = this.props.rowSelection;
+        const selectedRows = [...this.state.selectedRows];
+        const key = rowData[rowKey];
+        const { onChange = function () { }, onSelect = function () { } } = this.props.rowSelection;
 
         if (selected) {
-            if (!selectedRowKeys.includes(key)) selectedRowKeys.push(key)
+            if (!selectedRowKeys.includes(key)) {
+                selectedRowKeys.push(key)
+                selectedRows.push(rowData)
+            }
         } else {
             const index = selectedRowKeys.indexOf(key)
-            if (index > -1) {
-                selectedRowKeys.splice(index, 1)
-            }
+            if (index > -1) selectedRowKeys.splice(index, 1)
+
+            const rowIndex = selectedRows.findIndex(item => item[rowKey] === key);
+            if (rowIndex > -1) selectedRows.splice(rowIndex, 1)
         }
 
-        this.setState({ selectedRowKeys }, () => {
-            this.selectedAllRow();
+        this.setState({ selectedRowKeys, selectedRows }, () => {
+            onChange(selectedRowKeys, selectedRows);
+            onSelect(rowData, selected, selectedRows);
+            this.handleAllRowSelected();
         })
 
-        onChange(selectedRowKeys)
     }
 
     //选择全部行变化
     onHandleAllSelectChange = ({ selected }) => {
-        const { onChange = function () { } } = this.props.rowSelection;
+        const { rowKey, data, rowSelection } = this.props;
+        const { onChange = function () { }, onSelectAll = function () { } } = rowSelection;
         const selectedRowKeys = [...this.state.selectedRowKeys];
+        const selectedRows = [...this.state.selectedRows];
         let _selectedRowKeys = [];
+        let _selectedRows = [];
         if (selected) {
             _selectedRowKeys = Array.from(new Set([...selectedRowKeys, ...this.allRowKeys]));
+            _selectedRows = uniqueArrayObject([...selectedRows, ...data], rowKey);
         } else {
             _selectedRowKeys = selectedRowKeys.filter(item => !this.allRowKeys.includes(item))
+           _selectedRows = selectedRows.filter(item => !this.allRowKeys.includes(item[rowKey]))
         }
         this.setState({
             selectedRowKeys: _selectedRowKeys,
-            selectedAllRow: selected
+            selectedRows: _selectedRows,
+            allRowSelected: selected,
+            allSelectedIndeterminate: false
+        }, () => {
+            onChange(_selectedRowKeys, _selectedRows);
+            onSelectAll(selected, _selectedRows);
         })
-
-        onChange(_selectedRowKeys)
     }
 
     //选择全部行
-    selectedAllRow = () => {
-        let selectedAllRow = true;
+    handleAllRowSelected = () => {
+        
+        if(!this.allRowKeys.length){
+            this.setState({ 
+                allRowSelected: false,
+                allSelectedIndeterminate: false
+            })
+            return;
+        }
+        
+        const { selectedRowKeys } = this.state;
+        let allRowSelected = true;
+        let indeterminate = false;
+
         for (let i = 0; i < this.allRowKeys.length; i++) {
-            if (!this.state.selectedRowKeys.includes(this.allRowKeys[i])) {
-                selectedAllRow = false;
+
+            if(indeterminate && !allRowSelected){
                 break;
             }
+
+            if(selectedRowKeys.includes(this.allRowKeys[i])){
+                indeterminate = true;
+            }else{
+                allRowSelected = false;
+            }
         }
-        this.setState({ selectedAllRow })
+     
+        this.setState({ 
+            allRowSelected,
+            allSelectedIndeterminate: (!allRowSelected && indeterminate) ? true : false
+        })
     }
 
     //列显示/隐藏变化
     onHandleColumnsVisible = (columns) => {
         this.setState({
-            columns: this.calcColumnsWidth({columns})
+            columns: this.calcColumnsWidth({ columns })
         })
     }
 
@@ -515,6 +575,8 @@ export default class Index extends Component {
             hasHeaderExpandIcon,
             onColumnFilter,
             onScroll,
+            bordered,
+            className,
             ...rest
         } = this.props;
 
@@ -524,11 +586,12 @@ export default class Index extends Component {
             maxHeight: _maxHeight,
             expandedRowKeys,
             selectedRowKeys,
-            selectedAllRow,
+            allRowSelected,
             headerExpandedStatus,
             dropdownVisibles,
             filteredStates,
             allFilters,
+            allSelectedIndeterminate,
         } = this.state;
 
         //数据为空
@@ -601,7 +664,8 @@ export default class Index extends Component {
                 key: '__selection__',
                 rowKey: rowKey,
                 selectedRowKeys: selectedRowKeys,
-                selectedAllRow: selectedAllRow,
+                allRowSelected: allRowSelected,
+                indeterminate: allSelectedIndeterminate,
                 onChange: this.onHandleSelectChange,
                 onAllChange: this.onHandleAllSelectChange
             };
@@ -611,13 +675,18 @@ export default class Index extends Component {
             finalColumns = [selectionColumn, ...finalColumns]
         }
 
+        const _className = cn(className, {
+            [prefixClass('noBorder')]: bordered === false
+        })
 
         return (
             <div id="base_table_wrapper" ref={this.createTableWrapperRef}>
                 <Spin wrapperClassName={prefixClass('loading')} spinning={loading || false}>
-                    <Table
+                    <BaseTable
                         {...rest}
-                        ref={this.tableRef}
+                        ref={(baseTableRef) => {
+                            this.tableRef = baseTableRef
+                        }}
                         rowKey={rowKey}
                         fixed={fixed}
                         columns={finalColumns}
@@ -625,6 +694,7 @@ export default class Index extends Component {
                         width={width}
                         height={_height}
                         maxHeight={_maxHeight}
+                        className={_className}
                         headerHeight={headerHeight}
                         rowHeight={rowHeight}
                         expandColumnKey={this.expandColumnKey}
@@ -678,6 +748,8 @@ Index.defaultProps = {
     expandedRowKeys: [],
     //数据加载状态
     loading: false,
+    //是否展示外边框和列边框
+    bordered: true,
 }
 
 Index.propTypes = {

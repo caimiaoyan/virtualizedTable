@@ -215,7 +215,7 @@ const columns = [
 ]
 
 let dataList = [];
-for (let i = 1; i <= 10000; i++) {
+for (let i = 1; i <= 5000; i++) {
     let obj = {};
     obj.id = i;
     for (let j = 1; j < 20; j++) {
@@ -228,16 +228,25 @@ export default class Cp extends Component {
         selectedRowKeys: []
     }
 
-    onSelectChange = (selectedRowKeys) => {
+    onSelectChange = (selectedRowKeys, selectedRows) => {
         console.log('selectedRowKeys changed: ', selectedRowKeys);
+        console.log('selectedRows: ', selectedRows)
         this.setState({ selectedRowKeys });
     };
+
+    onSelect = (record, selected, selectedRows) =>{
+    }
+
+    onSelectAll = (selected, selectedRows) => {
+    }
 
     render() {
 
         const rowSelection = {
             selectedRowKeys: this.state.selectedRowKeys,
             onChange: this.onSelectChange,
+            onSelect: this.onSelect,
+            onSelectAll: this.onSelectAll
         };
 
         return (
@@ -555,6 +564,8 @@ for (let i = 1; i <= 10000; i++) {
     dataList.push(obj);
 }
 
+columns[0].frozen = 'left'
+
 const colSpanIndex = 1
 columns[colSpanIndex].colSpan = ({ rowData, rowIndex }) => (rowIndex % 4) + 1
 columns[colSpanIndex].align = 'center'
@@ -570,7 +581,7 @@ export default class Index extends Component {
         if (!columns.length) {
             return;
         }
-        const colSpan = columns[colSpanIndex].colSpan({ rowData, rowIndex })
+        const colSpan = columns[colSpanIndex] && columns[colSpanIndex].colSpan && columns[colSpanIndex].colSpan({ rowData, rowIndex })
         if (colSpan > 1) {
             let width = cells[colSpanIndex].props.style.width
             for (let i = 1; i < colSpan; i++) {
@@ -585,7 +596,7 @@ export default class Index extends Component {
             cells[colSpanIndex] = React.cloneElement(cells[colSpanIndex], { style })
         }
 
-        const rowSpan = columns[rowSpanIndex].rowSpan({ rowData, rowIndex })
+        const rowSpan = columns[rowSpanIndex] && columns[rowSpanIndex].rowSpan && columns[rowSpanIndex].rowSpan({ rowData, rowIndex })
         if (rowSpan > 1) {
             const cell = cells[rowSpanIndex]
             const rowHeight = this.tableRef && this.tableRef.current && this.tableRef.current.props.rowHeight || 33;
@@ -617,6 +628,7 @@ export default class Index extends Component {
         )
     }
 }
+
 ```
 
 ### 行事件处理器
@@ -1000,6 +1012,7 @@ export default class Cp extends Component {
 | loading | 页面是否加载中 | boolean | false |
 | rowKey | 唯一键 | string | 'id' |
 | className | 表格类名 | string | - |
+| bordered | 是否展示外边框和列边框 | boolean | true |
 | expandRow | 是否展开行 | boolean | false |
 | hasHeaderExpandIcon | 表格头部是否有展开全部的icon | boolean | true |
 | expandAllRow | 是否展开所有行 | boolean | true |
@@ -1018,6 +1031,7 @@ export default class Cp extends Component {
 | title | 标题 | string | - |
 | key | 列标志 | string | - |
 | datakey | 数据标志 | string | - |
+| frozen | 固定列 | 'left' &#124; 'right'  | |
 | align | 列单元格对齐 | string | 'left' |
 | width | 列宽度 | number | - |
 | width | 活动列宽度（每个表格都必须至少有一个活动列） | number | - |
@@ -1042,4 +1056,6 @@ export default class Cp extends Component {
 | width | 宽度 | number | 33 |
 | headerClassName | 表头类名 | string | - |
 | selectedRowKeys | 指定选中项的 key 数组，需要和 onChange 进行配合 | string[] &#124; number[] | [] |
-| onChange | 选中项发生变化时的回调 | function(selectedRowKeys): * | - |
+| onChange | 选中项发生变化时的回调 | function(selectedRowKeys, selectedRows): * | - |
+| onSelect | 用户手动选择/取消选择某行的回调 | function(record, selected, selectedRows): * | - |
+| onSelectAll | 用户手动选择/取消选择所有行的回调 | function(selected, selectedRows): * | - |

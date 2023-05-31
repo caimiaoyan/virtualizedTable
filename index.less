@@ -18,7 +18,7 @@
 @header-cell-hovered-background-color: #ffe8d7;
 @sort-indicator-hovered-color: #888888;
 @sorting-hovered-color: rgba(0, 0, 0, 0.01);
-@column-resizer-color: #cccccc;
+@column-resizer-color: initial;
 
 @padding-left: 0px;
 @padding-right: 0px;
@@ -557,6 +557,22 @@
   &__row-collapsed {
     &::after {
       content: '+';
+    }
+  }
+
+  &__noBorder{
+    .@{table-prefix}__table{
+      outline: none;
+      .@{table-prefix}__header-cell,
+      .@{table-prefix}__row-cell{
+        border-right: none;
+      }
+    }
+    .@{table-prefix}__table-frozen-left-shadow {
+      box-shadow: 6px 0 6px -4px rgba(0, 0, 0, 0.15);
+    }
+    .@{table-prefix}__table-frozen-right-shadow {
+      box-shadow: -6px 0 6px -4px rgba(0, 0, 0, 0.15);
     }
   }
 

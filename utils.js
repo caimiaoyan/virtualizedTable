@@ -140,3 +140,16 @@ export function prefixClass(className) {
 export function getObjectValue(obj, defaultObj, proprety){
   return obj.hasOwnProperty(proprety)? obj[proprety] : defaultObj[proprety];
 }
+
+/**
+ * @description 给数组对象去重
+ */
+export function uniqueArrayObject(targetArr, key) {
+  const uniqueArr = [];
+  targetArr.forEach(targetItem => {
+    if(uniqueArr.every(item => targetItem[key] !== item[key])) {
+      uniqueArr.push(targetItem)
+    }
+  });
+  return uniqueArr;
+}
